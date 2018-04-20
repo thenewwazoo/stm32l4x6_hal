@@ -11,7 +11,6 @@ use ::stm32l4x6;
 use super::*;
 
 impl_parts!(
-    //Next GPIOs are re-using gpioc modules
     GPIOD, gpioc;
     GPIOE, gpioc;
     GPIOH, gpioc;
