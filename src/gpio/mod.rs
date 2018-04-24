@@ -327,6 +327,7 @@ impl<PIN> Deref for Led<PIN> {
     }
 }
 
+#[allow(unused_macros)]
 macro_rules! define_led {
     ($(#[$attr:meta])* $name:ident, $typ:ty) => {
         $(#[$attr])*
