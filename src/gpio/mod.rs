@@ -169,6 +169,14 @@ impl AltFun for AF15 {
     const NUM: u32 = 15;
 }
 
+#[repr(C)]
+pub enum PinSpeed {
+    Low = 0,
+    Medium,
+    Fast,
+    High,
+}
+
 macro_rules! impl_parts {
     ($($GPIOX:ident, $gpiox:ident;)+) => {
         $(
@@ -196,6 +204,11 @@ macro_rules! impl_parts {
             impl PUPDR<$GPIOX> {
                 pub(crate) fn pupdr(&mut self) -> &stm32l4x6::$gpiox::PUPDR {
                     unsafe { &(*$GPIOX::ptr()).pupdr }
+                }
+            }
+            impl OSPEEDR<$GPIOX> {
+                pub(crate) fn ospeedr(&mut self) -> &stm32l4x6::$gpiox::OSPEEDR {
+                    unsafe { &(*$GPIOX::ptr()).ospeedr }
                 }
             }
          )+
@@ -226,6 +239,8 @@ macro_rules! impl_gpio {
             pub otyper: OTYPER<$GPIOX>,
             /// Opaque PUPDR register
             pub pupdr: PUPDR<$GPIOX>,
+            /// Opaque OSPEEDR register
+            pub ospeedr: OSPEEDR<$GPIOX>,
             $(
                 /// Pin
                 pub $PXiL: $PXiL<Input<Floating>>,
@@ -240,8 +255,9 @@ macro_rules! impl_gpio {
             ///Creates new instance of GPIO by enabling it on AHB register
             pub fn new(ahb: &mut AHB) -> Self {
                 ahb.enr2().modify(|_, w| w.$gpioen().set_bit());
-                ahb.rstr2().modify(|_, w| w.$gpiorst().set_bit());
-                ahb.rstr2().modify(|_, w| w.$gpiorst().clear_bit());
+                while !ahb.enr2().read().$gpioen().bit_is_set() {}
+                //ahb.rstr2().modify(|_, w| w.$gpiorst().set_bit());
+                //ahb.rstr2().modify(|_, w| w.$gpiorst().clear_bit());
 
                 Self {
                     afrh: AFRH(PhantomData),
@@ -249,6 +265,7 @@ macro_rules! impl_gpio {
                     moder: MODER(PhantomData),
                     otyper: OTYPER(PhantomData),
                     pupdr: PUPDR(PhantomData),
+                    ospeedr: OSPEEDR(PhantomData),
                     $(
                         $PXiL: $PXiL(PhantomData),
                     )*
@@ -276,6 +293,13 @@ macro_rules! impl_pin {
                 pupdr.pupdr().modify(|r, w| unsafe { w.bits(Mode::modify_pupdr_bits(r.bits(), Self::OFFSET)) });
 
                 $PXi(PhantomData)
+            }
+
+            #[inline]
+            pub fn set_pin_speed(&self, spd: PinSpeed, ospeedr: &mut OSPEEDR<$GPIOX>) {
+                ospeedr
+                    .ospeedr()
+                    .modify(|r, w| unsafe { w.bits((r.bits() & !(0b11 << Self::OFFSET)) | ((spd as u32) << Self::OFFSET)) });
             }
 
             /// Configures the PIN to operate as Output Pin according to Mode.
@@ -423,6 +447,8 @@ pub struct MODER<GPIO>(PhantomData<GPIO>);
 pub struct OTYPER<GPIO>(PhantomData<GPIO>);
 /// Opaque PUPDR register
 pub struct PUPDR<GPIO>(PhantomData<GPIO>);
+/// Opaque OSPEEDR register
+pub struct OSPEEDR<GPIO>(PhantomData<GPIO>);
 
 impl_parts!(
     GPIOA, gpioa;
