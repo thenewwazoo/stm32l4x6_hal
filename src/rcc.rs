@@ -25,6 +25,7 @@ impl Constrain<Rcc> for RCC {
             apb1: APB1(()),
             apb2: APB2(()),
             bdcr: BDCR(()),
+            ccipr: CCIPR(()),
             csr: CSR(()),
             cfgr: CFGR {
                 hclk: None,
@@ -33,7 +34,8 @@ impl Constrain<Rcc> for RCC {
                 sysclk: clocking::SysClkSource::MSI(
                     clocking::MediumSpeedInternalRC::new(4_000_000, false)
                     ),
-            }
+            },
+            icscr: ICSCR(()),
         }
     }
 }
@@ -63,6 +65,7 @@ pub mod clocking {
     //! The PLL is a bit more complex because it _is_ a source (`PLLClkOutput`) and also _requires_
     //! a source (`PLLClkSource`), but you compose the types similarly.
 
+    use super::Hertz;
     use super::rcc;
 
     pub trait InputClock {
@@ -88,6 +91,12 @@ pub mod clocking {
                          );
             while rcc.cr.read().hsirdy().bit_is_clear() {}
             (16_000_000, 0b01)
+        }
+    }
+
+    impl InputClock for HighSpeedInternal16RC {
+        fn freq(&self) -> u32 {
+            16_000_000
         }
     }
 
@@ -252,6 +261,13 @@ pub mod clocking {
             assert!(m > 0 && m < 9);
             assert!(n > 7 && n < 87);
             assert!(r == 2 || r == 4 || r == 6 || r == 8);
+
+            let vco_if = src.freq() / m as u32;
+            assert!(vco_if >= 4_000_000 && vco_if <= 16_000_000);
+
+            let vco_of = vco_if * n as u32;
+            assert!(vco_of >= 64_000_000 && vco_of <= 344_000_000);
+
             let f = src.freq() / m as u32 * n as u32 / r as u32;
             assert!(f < super::SYS_CLOCK_MAX);
 
@@ -271,7 +287,13 @@ pub mod clocking {
                     .plln()
                     .bits(self.n)
                     .pllr()
-                    .bits(self.r)
+                    .bits(match self.r {
+                        2 => 0b00,
+                        4 => 0b01,
+                        6 => 0b10,
+                        8 => 0b11,
+                        _ => panic!("bad PLL R value"),
+                    })
             });
             rcc.cr.modify(|_,w| w.pllon().set_bit());
             rcc.pllcfgr.modify(|_,w| w.pllren().set_bit());
@@ -334,6 +356,26 @@ pub mod clocking {
         }
     }
 
+    pub enum USARTClkSource {
+        PCLK(PeripheralClock), /// U(S)ART-specific peripheral clock (PCLK1, PCLK2)
+        LSE,
+        HSI16(HighSpeedInternal16RC),
+        SYSCLK(Hertz),
+    }
+
+    pub enum PeripheralClock {
+        PCLK1(Hertz),
+        PCLK2(Hertz),
+    }
+
+    impl InputClock for PeripheralClock {
+        fn freq(&self) -> u32 {
+            match *self {
+                PeripheralClock::PCLK1(s) => s.0.into(),
+                PeripheralClock::PCLK2(s) => s.0.into(),
+            }
+        }
+    }
 }
 
 /// Constrained RCC peripheral
@@ -346,10 +388,14 @@ pub struct Rcc {
     pub apb2: APB2,
     /// Backup domain registers.
     pub bdcr: BDCR,
+    /// Peripherals independent clock configuration register
+    pub ccipr: CCIPR,
+    /// HW clock configuration.
+    pub cfgr: CFGR,
     /// Control/status register.
     pub csr: CSR,
-    /// HW clock configuration.
-    pub cfgr: CFGR
+    /// Internal clock sources calibration register
+    pub icscr: ICSCR,
 }
 
 pub struct AHB(());
@@ -477,6 +523,28 @@ impl BDCR {
     }
 }
 
+///Peripherals independent clock configuration register
+///
+///See Reference Manual 6.4.28
+pub struct CCIPR(());
+impl CCIPR {
+    #[inline]
+    pub fn inner(&mut self) -> &rcc::CCIPR {
+        unsafe { &(*RCC::ptr()).ccipr }
+    }
+}
+
+///Internal clock sources calibration register
+///
+///See Reference Manual 6.4.2
+pub struct ICSCR(());
+impl ICSCR {
+    #[inline]
+    pub fn inner(&mut self) -> &rcc::ICSCR {
+        unsafe { &(*RCC::ptr()).icscr }
+    }
+}
+
 ///Control/Status Register
 ///
 ///See Reference manual Ch. 6.4.29
@@ -545,9 +613,8 @@ impl CFGR {
             if let clocking::PLLClkSource::None = s.src {
                 panic!("PLL must have input clock to drive SYSCLK");
             }
-        } else {
-            self.sysclk = src;
         }
+        self.sysclk = src;
         self
     }
 

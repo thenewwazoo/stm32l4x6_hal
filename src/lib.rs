@@ -34,5 +34,6 @@ pub mod config;
 pub mod rcc;
 pub mod delay;
 pub mod gpio;
+pub mod serial;
 pub mod timer;
 pub mod lcd;

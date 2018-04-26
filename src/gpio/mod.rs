@@ -68,6 +68,15 @@ pub struct AF14;
 /// Alternate function 15 (type state)
 pub struct AF15;
 
+#[repr(C)]
+pub enum PinSpeed {
+    Low = 0,
+    Medium,
+    Fast,
+    High,
+}
+
+
 macro_rules! impl_parts {
     ($($GPIOX:ident, $gpiox:ident;)+) => {
         $(
@@ -95,6 +104,11 @@ macro_rules! impl_parts {
             impl PUPDR<$GPIOX> {
                 pub(crate) fn pupdr(&mut self) -> &stm32l4x6::$gpiox::PUPDR {
                     unsafe { &(*$GPIOX::ptr()).pupdr }
+                }
+            }
+            impl OSPEEDR<$GPIOX> {
+                pub(crate) fn ospeedr(&mut self) -> &stm32l4x6::$gpiox::OSPEEDR {
+                    unsafe { &(*$GPIOX::ptr()).ospeedr }
                 }
             }
          )+
@@ -125,6 +139,8 @@ macro_rules! impl_gpio {
             pub otyper: OTYPER<$GPIOX>,
             /// Opaque PUPDR register
             pub pupdr: PUPDR<$GPIOX>,
+            /// Opaque OSPEEDR register
+            pub ospeedr: OSPEEDR<$GPIOX>,
             $(
                 /// Pin
                 pub $PXiL: $PXiL<Input<Floating>>,
@@ -139,8 +155,9 @@ macro_rules! impl_gpio {
             ///Creates new instance of GPIO by enabling it on AHB register
             pub fn new(ahb: &mut AHB) -> Self {
                 ahb.enr2().modify(|_, w| w.$gpioen().set_bit());
-                ahb.rstr2().modify(|_, w| w.$gpiorst().set_bit());
-                ahb.rstr2().modify(|_, w| w.$gpiorst().clear_bit());
+                while !ahb.enr2().read().$gpioen().bit_is_set() {}
+                //ahb.rstr2().modify(|_, w| w.$gpiorst().set_bit());
+                //ahb.rstr2().modify(|_, w| w.$gpiorst().clear_bit());
 
                 Self {
                     afrh: AFRH(PhantomData),
@@ -148,6 +165,7 @@ macro_rules! impl_gpio {
                     moder: MODER(PhantomData),
                     otyper: OTYPER(PhantomData),
                     pupdr: PUPDR(PhantomData),
+                    ospeedr: OSPEEDR(PhantomData),
                     $(
                         $PXiL: $PXiL(PhantomData),
                     )*
@@ -183,6 +201,11 @@ macro_rules! impl_pin {
                 $PXi(PhantomData)
             }
 
+            #[inline]
+            pub fn set_pin_speed(&self, spd: PinSpeed, ospeedr: &mut OSPEEDR<$GPIOX>) {
+                ospeedr.ospeedr().modify(|r,w| unsafe { w.bits((r.bits() & !(0b11 << Self::OFFSET)) | ((spd as u32) << Self::OFFSET)) });
+            }
+
             /// Configures the pin to operate as a pulled up input pin
             pub fn into_pull_up_input(self, moder: &mut MODER<$GPIOX>, pupdr: &mut PUPDR<$GPIOX>) -> $PXi<Input<PullUp>> {
                 Self::set_input_mode(moder);
@@ -215,44 +238,63 @@ macro_rules! impl_pin {
                 $PXi(PhantomData)
             }
 
-            // alternate function mode
-            fn set_alt_fun_mode(moder: &mut MODER<$GPIOX>, afr: &mut $AFR<$GPIOX>, af: u32) {
-                moder.moder().modify(|r, w| unsafe { w.bits((r.bits() & !(0b11 << Self::OFFSET)) | (0b10 << Self::OFFSET)) });
-                afr.afr().modify(|r, w| unsafe { w.bits((r.bits() & !(0b1111 << Self::OFFSET)) | (af << Self::OFFSET)) });
+            // Alternate function mode; defaults to AF_PP; AF_OD not implemented
+            fn set_alt_fun_mode(moder: &mut MODER<$GPIOX>, otyper: &mut OTYPER<$GPIOX>, afr: &mut $AFR<$GPIOX>, af: u32) {
+                afr.afr().modify(|r, w| unsafe {
+                    // AFRx pin fields are 4 bits wide, and each 8-pin bank has its own reg (L or
+                    // H); e.g. pin 8's offset is _0_, within AFRH.
+                    let afr_offset = ($i % 8) * 4;
+                    w.bits(
+                        (r.bits() & !(0b1111 << afr_offset))
+                        | (af << afr_offset)
+                        )
+                });
+                moder.moder().modify(|r, w| unsafe {
+                    w.bits(
+                        (r.bits() & !(0b11 << Self::OFFSET))
+                        | (0b10 << Self::OFFSET)
+                        )
+                });
+                otyper.otyper().modify(|r, w| unsafe {
+                    w.bits(
+                        (r.bits() & !(0b11 << Self::OFFSET))
+                        | (0b10 << Self::OFFSET)
+                        )
+                });
             }
 
             #[inline]
-            /// Configures the ping to operate as alternative function 4
-            pub fn into_alt_fun4(self, moder: &mut MODER<$GPIOX>, afr: &mut $AFR<$GPIOX>) -> $PXi<AF4> {
-                Self::set_alt_fun_mode(moder, afr, 4);
+            /// Configures the ping to operate as alternative function 4, push-pull mode
+            pub fn into_alt_fun4(self, moder: &mut MODER<$GPIOX>, otyper: &mut OTYPER<$GPIOX>, afr: &mut $AFR<$GPIOX>) -> $PXi<AF4> {
+                Self::set_alt_fun_mode(moder, otyper, afr, 4);
                 $PXi(PhantomData)
             }
 
             #[inline]
-            /// Configures the ping to operate as alternative function 5
-            pub fn into_alt_fun5(self, moder: &mut MODER<$GPIOX>, afr: &mut $AFR<$GPIOX>) -> $PXi<AF5> {
-                Self::set_alt_fun_mode(moder, afr, 5);
+            /// Configures the ping to operate as alternative function 5, push-pull mode
+            pub fn into_alt_fun5(self, moder: &mut MODER<$GPIOX>, otyper: &mut OTYPER<$GPIOX>, afr: &mut $AFR<$GPIOX>) -> $PXi<AF5> {
+                Self::set_alt_fun_mode(moder, otyper, afr, 5);
                 $PXi(PhantomData)
             }
 
             #[inline]
-            /// Configures the ping to operate as alternative function 6
-            pub fn into_alt_fun6(self, moder: &mut MODER<$GPIOX>, afr: &mut $AFR<$GPIOX>) -> $PXi<AF6> {
-                Self::set_alt_fun_mode(moder, afr, 6);
+            /// Configures the ping to operate as alternative function 6, push-pull mode
+            pub fn into_alt_fun6(self, moder: &mut MODER<$GPIOX>, otyper: &mut OTYPER<$GPIOX>, afr: &mut $AFR<$GPIOX>) -> $PXi<AF6> {
+                Self::set_alt_fun_mode(moder, otyper, afr, 6);
                 $PXi(PhantomData)
             }
 
             #[inline]
-            /// Configures the ping to operate as alternative function 7
-            pub fn into_alt_fun7(self, moder: &mut MODER<$GPIOX>, afr: &mut $AFR<$GPIOX>) -> $PXi<AF7> {
-                Self::set_alt_fun_mode(moder, afr, 7);
+            /// Configures the ping to operate as alternative function 7, push-pull mode
+            pub fn into_alt_fun7(self, moder: &mut MODER<$GPIOX>, otyper: &mut OTYPER<$GPIOX>, afr: &mut $AFR<$GPIOX>) -> $PXi<AF7> {
+                Self::set_alt_fun_mode(moder, otyper, afr, 7);
                 $PXi(PhantomData)
             }
 
             #[inline]
-            /// Configures the ping to operate as alternative function 11
-            pub fn into_alt_fun11(self, moder: &mut MODER<$GPIOX>, afr: &mut $AFR<$GPIOX>) -> $PXi<AF11> {
-                Self::set_alt_fun_mode(moder, afr, 11);
+            /// Configures the ping to operate as alternative function 11, push-pull mode
+            pub fn into_alt_fun11(self, moder: &mut MODER<$GPIOX>, otyper: &mut OTYPER<$GPIOX>, afr: &mut $AFR<$GPIOX>) -> $PXi<AF11> {
+                Self::set_alt_fun_mode(moder, otyper, afr, 11);
                 $PXi(PhantomData)
             }
 
@@ -354,6 +396,8 @@ pub struct MODER<GPIO>(PhantomData<GPIO>);
 pub struct OTYPER<GPIO>(PhantomData<GPIO>);
 /// Opaque PUPDR register
 pub struct PUPDR<GPIO>(PhantomData<GPIO>);
+/// Opaque OSPEEDR register
+pub struct OSPEEDR<GPIO>(PhantomData<GPIO>);
 
 impl_parts!(
     GPIOA, gpioa;
