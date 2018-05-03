@@ -14,6 +14,7 @@
 //! [cortex-m-quickstart]: https://docs.rs/cortex-m-quickstart/~0.2.3
 
 #![feature(never_type)]
+#![feature(unsize)]
 #![no_std]
 
 extern crate cast;
@@ -30,6 +31,7 @@ use core::ops;
 pub mod common;
 pub mod config;
 pub mod delay;
+pub mod dma;
 pub mod flash;
 pub mod gpio;
 pub mod lcd;
