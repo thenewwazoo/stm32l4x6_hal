@@ -13,20 +13,21 @@
 //!
 //! [cortex-m-quickstart]: https://docs.rs/cortex-m-quickstart/~0.2.3
 
-#![feature(never_type)]
-#![feature(unsize)]
 #![no_std]
 
 extern crate cast;
-extern crate cortex_m;
-extern crate embedded_hal as hal;
-extern crate nb;
+pub extern crate cortex_m;
+pub extern crate nb;
+pub extern crate embedded_hal;
 pub extern crate stm32l4x6;
+
+use embedded_hal as hal;
 
 use core::cmp;
 use core::marker;
 use core::mem;
 use core::ops;
+use core::ptr;
 
 pub mod common;
 pub mod config;
@@ -40,3 +41,4 @@ pub mod rcc;
 pub mod time;
 pub mod timer;
 pub mod serial;
+pub mod spi;
