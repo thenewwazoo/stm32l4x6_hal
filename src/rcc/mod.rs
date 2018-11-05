@@ -4,8 +4,6 @@
 // opaque CR member to RCC, and add methods to CR and BDCR. They should probably take clock source
 // variant arguments.
 
-#![deny(missing_docs, unused_results)]
-
 use stm32l4x6::{rcc, PWR, RCC};
 
 use common::Constrain;
@@ -196,9 +194,9 @@ impl BDCR {
     }
 }
 
-///Peripherals independent clock configuration register
+/// Peripherals independent clock configuration register
 ///
-///See Reference Manual 6.4.28
+/// See Reference Manual 6.4.28
 pub struct CCIPR(());
 impl CCIPR {
     #[inline]
@@ -207,9 +205,9 @@ impl CCIPR {
     }
 }
 
-///Internal clock sources calibration register
+/// Internal clock sources calibration register
 ///
-///See Reference Manual 6.4.2
+/// See Reference Manual 6.4.2
 pub struct ICSCR(());
 impl ICSCR {
     #[inline]
@@ -218,7 +216,7 @@ impl ICSCR {
     }
 }
 
-///Control/Status Register
+/// Control/Status Register
 ///
 /// See Reference manual Ch. 6.4.29
 pub struct CSR(());

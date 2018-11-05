@@ -22,8 +22,8 @@
 //! The PLL is a bit more complex because it _is_ a source (`PLLClkOutput`) and also _requires_
 //! a source (`PLLClkSource`), but you compose the types similarly.
 
-use super::Hertz;
 use super::rcc;
+use super::Hertz;
 
 /// Clocks (OSCs or RCs) that can be used as inputs to peripherals
 ///
@@ -245,20 +245,13 @@ impl PLLClkOutput {
         rcc.cr.modify(|_, w| w.pllon().clear_bit());
         while rcc.cr.read().pllrdy().bit_is_set() {}
         rcc.pllcfgr.modify(|_, w| unsafe {
-            w.pllsrc()
-                .bits(pllsrc_bits)
-                .pllm()
-                .bits(self.m - 1)
-                .plln()
-                .bits(self.n)
-                .pllr()
-                .bits(match self.r {
-                    2 => 0b00,
-                    4 => 0b01,
-                    6 => 0b10,
-                    8 => 0b11,
-                    _ => panic!("bad PLL R value"),
-                })
+            w.pllsrc().bits(pllsrc_bits).pllm().bits(self.m - 1).plln().bits(self.n).pllr().bits(match self.r {
+                2 => 0b00,
+                4 => 0b01,
+                6 => 0b10,
+                8 => 0b11,
+                _ => panic!("bad PLL R value"),
+            })
         });
         rcc.cr.modify(|_, w| w.pllon().set_bit());
         while rcc.cr.read().pllrdy().bit_is_clear() {}
@@ -329,7 +322,8 @@ impl InputClock for PLLClkSource {
 }
 
 pub enum USARTClkSource {
-    PCLK(PeripheralClock), /// U(S)ART-specific peripheral clock (PCLK1, PCLK2)
+    PCLK(PeripheralClock),
+    /// U(S)ART-specific peripheral clock (PCLK1, PCLK2)
     LSE,
     HSI16(HighSpeedInternal16RC),
     SYSCLK(Hertz),
